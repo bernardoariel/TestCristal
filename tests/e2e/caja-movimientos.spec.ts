@@ -392,6 +392,197 @@ test.describe('Movimientos de Caja - Pruebas Secuenciales', () => {
 
 });
 
+// ========================================
+// PRUEBAS CON MONTOS ALEATORIOS
+// ========================================
+
+test.describe('Movimientos de Caja - Montos Aleatorios', () => {
+
+    test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach('Conectarse a la web', async ({ page }) => {
+        await page.goto('http://distribuidora.local/inicio');
+        await loginAdmin(page, users.superadmin);
+        await page.waitForTimeout(5000);
+    });
+
+    // Función helper para generar montos aleatorios
+    function generarMontoAleatorio(min: number = 100, max: number = 5000): number {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Función helper para generar cantidad aleatoria de operaciones
+    function generarCantidadOperaciones(min: number = 1, max: number = 3): number {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    test('Múltiples ingresos aleatorios y verificación de total', async ({ page }) => {
+        console.log('🎲 Iniciando test con múltiples ingresos aleatorios');
+        
+        // Capturar saldo inicial (sin importar cuál sea)
+        await page.waitForSelector('[data-test="label-caja-box"]', { timeout: 15000 });
+        const saldoInicialText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoInicial = parseFloat(saldoInicialText?.replace(/[$,]/g, '') || '0');
+        console.log('💰 Saldo inicial:', saldoInicial);
+
+        // Hacer múltiples ingresos pequeños y verificar cada uno
+        const cantidadIngresos = generarCantidadOperaciones(2, 3);
+        console.log(`🎯 Se realizarán ${cantidadIngresos} ingresos aleatorios`);
+
+        let saldoActualEsperado = saldoInicial;
+        const ingresosProcesados: number[] = [];
+
+        for (let i = 1; i <= cantidadIngresos; i++) {
+            const montoIngreso = generarMontoAleatorio(100, 500); // Montos más pequeños
+            ingresosProcesados.push(montoIngreso);
+            saldoActualEsperado += montoIngreso;
+
+            console.log(`📥 Ingreso ${i}/${cantidadIngresos}: $${montoIngreso}`);
+
+            // Hacer el ingreso
+            await page.locator('[data-test="button-ingresar-box"]').click();
+            await page.waitForTimeout(2000);
+
+            await page.locator('#formIngresar input[name="monto"]').fill(montoIngreso.toString());
+            await page.locator('#formIngresar input[name="concepto"]').fill(`Test aleatorio ${i}`);
+            await page.getByRole('button', { name: 'Guardar' }).click();
+
+            // Esperar y verificar inmediatamente
+            await page.waitForTimeout(3000);
+            
+            const saldoDespuesText = await page.locator('[data-test="label-caja-box"]').textContent();
+            const saldoDespues = parseFloat(saldoDespuesText?.replace(/[$,]/g, '') || '0');
+            
+            console.log(`   💰 Saldo después del ingreso ${i}: $${saldoDespues} (esperado: $${saldoActualEsperado})`);
+            
+            // Verificar cada paso individualmente
+            expect(saldoDespues).toBe(saldoActualEsperado);
+        }
+
+        console.log('📊 RESUMEN DE INGRESOS ALEATORIOS:');
+        console.log(`   Ingresos procesados: ${ingresosProcesados.join(', ')}`);
+        console.log(`   Total ingresado: $${ingresosProcesados.reduce((a, b) => a + b, 0)}`);
+        console.log(`   Saldo inicial: $${saldoInicial}`);
+        console.log(`   Saldo final esperado: $${saldoActualEsperado}`);
+
+        console.log('✅ Verificación exitosa: todos los ingresos aleatorios se reflejaron correctamente');
+    });
+
+    test('Egresos aleatorios y verificación incremental', async ({ page }) => {
+        console.log('🎲 Iniciando test con egresos aleatorios');
+        
+        // Capturar saldo inicial
+        await page.waitForSelector('[data-test="label-caja-box"]', { timeout: 15000 });
+        const saldoInicialText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoInicial = parseFloat(saldoInicialText?.replace(/[$,]/g, '') || '0');
+        console.log('💰 Saldo inicial:', saldoInicial);
+
+        // Hacer egresos pequeños y seguros
+        const cantidadEgresos = Math.min(2, Math.floor(saldoInicial / 1000)); // Máximo 2 egresos
+        console.log(`🎯 Se realizarán ${cantidadEgresos} egresos aleatorios`);
+
+        if (cantidadEgresos === 0) {
+            console.log('⚠️  Saldo insuficiente para realizar egresos, saltando test');
+            return;
+        }
+
+        let saldoActualEsperado = saldoInicial;
+        const egresosProcesados: number[] = [];
+        const montoMaximoPorEgreso = Math.floor(saldoInicial / (cantidadEgresos * 2)); // Dejar mucho margen
+
+        for (let i = 1; i <= cantidadEgresos; i++) {
+            const montoEgreso = generarMontoAleatorio(50, Math.min(montoMaximoPorEgreso, 300));
+            egresosProcesados.push(montoEgreso);
+            saldoActualEsperado -= montoEgreso;
+
+            console.log(`📤 Egreso ${i}/${cantidadEgresos}: $${montoEgreso}`);
+
+            // Hacer el egreso
+            await page.locator('[data-test="button-extraer-box"]').click();
+            await page.waitForTimeout(2000);
+
+            await page.locator('#formExtraer input[name="monto"]').fill(montoEgreso.toString());
+            await page.locator('#formExtraer input[name="concepto"]').fill(`Test egreso ${i}`);
+            await page.getByRole('button', { name: 'Guardar' }).click();
+
+            // Esperar y verificar inmediatamente
+            await page.waitForTimeout(3000);
+            
+            const saldoDespuesText = await page.locator('[data-test="label-caja-box"]').textContent();
+            const saldoDespues = parseFloat(saldoDespuesText?.replace(/[$,]/g, '') || '0');
+            
+            console.log(`   💰 Saldo después del egreso ${i}: $${saldoDespues} (esperado: $${saldoActualEsperado})`);
+            
+            // Verificar cada paso individualmente
+            expect(saldoDespues).toBe(saldoActualEsperado);
+        }
+
+        console.log('📊 RESUMEN DE EGRESOS ALEATORIOS:');
+        console.log(`   Egresos procesados: ${egresosProcesados.join(', ')}`);
+        console.log(`   Total egresado: $${egresosProcesados.reduce((a, b) => a + b, 0)}`);
+        console.log(`   Saldo inicial: $${saldoInicial}`);
+        console.log(`   Saldo final esperado: $${saldoActualEsperado}`);
+
+        console.log('✅ Verificación exitosa: todos los egresos aleatorios se reflejaron correctamente');
+    });
+
+    test('Operación mixta simple (un ingreso y un egreso)', async ({ page }) => {
+        console.log('🎲 Iniciando test con operación mixta simple');
+        
+        // Capturar saldo inicial
+        await page.waitForSelector('[data-test="label-caja-box"]', { timeout: 15000 });
+        const saldoInicialText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoInicial = parseFloat(saldoInicialText?.replace(/[$,]/g, '') || '0');
+        console.log('💰 Saldo inicial:', saldoInicial);
+
+        // PASO 1: Hacer un ingreso pequeño
+        const montoIngreso = generarMontoAleatorio(200, 400);
+        console.log(`📥 Paso 1 - Realizando ingreso: $${montoIngreso}`);
+
+        await page.locator('[data-test="button-ingresar-box"]').click();
+        await page.waitForTimeout(1500);
+        await page.locator('#formIngresar input[name="monto"]').fill(montoIngreso.toString());
+        await page.locator('#formIngresar input[name="concepto"]').fill('Test mixto - Ingreso');
+        await page.getByRole('button', { name: 'Guardar' }).click();
+        await page.waitForTimeout(3000);
+
+        // Verificar ingreso
+        const saldoDespuesIngresoText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoDespuesIngreso = parseFloat(saldoDespuesIngresoText?.replace(/[$,]/g, '') || '0');
+        const saldoEsperadoDespuesIngreso = saldoInicial + montoIngreso;
+        
+        console.log(`   💰 Saldo después del ingreso: $${saldoDespuesIngreso} (esperado: $${saldoEsperadoDespuesIngreso})`);
+        expect(saldoDespuesIngreso).toBe(saldoEsperadoDespuesIngreso);
+
+        // PASO 2: Hacer un egreso pequeño
+        const montoEgreso = generarMontoAleatorio(100, 250);
+        console.log(`📤 Paso 2 - Realizando egreso: $${montoEgreso}`);
+
+        await page.locator('[data-test="button-extraer-box"]').click();
+        await page.waitForTimeout(1500);
+        await page.locator('#formExtraer input[name="monto"]').fill(montoEgreso.toString());
+        await page.locator('#formExtraer input[name="concepto"]').fill('Test mixto - Egreso');
+        await page.getByRole('button', { name: 'Guardar' }).click();
+        await page.waitForTimeout(3000);
+
+        // Verificar egreso y resultado final
+        const saldoFinalText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoFinal = parseFloat(saldoFinalText?.replace(/[$,]/g, '') || '0');
+        const saldoEsperadoFinal = saldoDespuesIngreso - montoEgreso;
+
+        console.log('📊 RESUMEN DE OPERACIÓN MIXTA:');
+        console.log(`   Ingreso: +$${montoIngreso}`);
+        console.log(`   Egreso: -$${montoEgreso}`);
+        console.log(`   Diferencia neta: $${montoIngreso - montoEgreso}`);
+        console.log(`   Saldo inicial: $${saldoInicial}`);
+        console.log(`   Saldo final: $${saldoFinal} (esperado: $${saldoEsperadoFinal})`);
+
+        expect(saldoFinal).toBe(saldoEsperadoFinal);
+        console.log('✅ Verificación exitosa: operación mixta se reflejó correctamente');
+    });
+
+});
+
 
 
 
