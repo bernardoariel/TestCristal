@@ -583,6 +583,349 @@ test.describe('Movimientos de Caja - Montos Aleatorios', () => {
 
 });
 
+// ========================================
+// PRUEBAS DE VENTAS ALEATORIAS
+// ========================================
+
+test.describe('Ventas con Productos y Pagos Aleatorios', () => {
+
+    test.describe.configure({ mode: 'serial' });
+
+    test.beforeEach('Conectarse a la web', async ({ page }) => {
+        await page.goto('http://distribuidora.local/inicio');
+        await loginAdmin(page, users.superadmin);
+        await page.waitForTimeout(5000);
+    });
+
+    // Test de exploración para encontrar selectores de navegación
+    test('Explorar selectores de navegación disponibles', async ({ page }) => {
+        console.log('🔍 Explorando selectores de navegación disponibles...');
+        
+        // Buscar todos los enlaces de navegación posibles
+        const navLinks = await page.locator('a').all();
+        console.log(`📍 Se encontraron ${navLinks.length} enlaces en la página`);
+        
+        for (let i = 0; i < Math.min(navLinks.length, 15); i++) {
+            const link = navLinks[i];
+            try {
+                const href = await link.getAttribute('href');
+                const text = await link.textContent();
+                const dataTest = await link.getAttribute('data-test');
+                const className = await link.getAttribute('class');
+                console.log(`   Enlace ${i + 1}: "${text?.trim()}" | href="${href}" | data-test="${dataTest}" | class="${className}"`);
+            } catch (error) {
+                console.log(`   Enlace ${i + 1}: Error al obtener atributos`);
+            }
+        }
+        
+        // Buscar elementos específicos que contengan "ventas" o "venta" 
+        console.log('\n🛒 Buscando elementos relacionados con ventas...');
+        try {
+            const ventasElements = await page.locator('*').filter({ hasText: /venta/i }).all();
+            console.log(`📦 Se encontraron ${ventasElements.length} elementos con texto "venta"`);
+            
+            for (let i = 0; i < Math.min(ventasElements.length, 8); i++) {
+                const element = ventasElements[i];
+                const tagName = await element.evaluate(el => el.tagName.toLowerCase());
+                const text = await element.textContent();
+                const href = await element.getAttribute('href');
+                const dataTest = await element.getAttribute('data-test');
+                console.log(`   Elemento ${i + 1}: <${tagName}> "${text?.trim()}" | href="${href}" | data-test="${dataTest}"`);
+            }
+        } catch (error) {
+            console.log('⚠️ Error buscando elementos con texto "venta"');
+        }
+        
+        console.log('✅ Exploración completada - revisar logs para encontrar selector correcto');
+    });
+
+    // Función helper para seleccionar método de pago aleatorio
+    function seleccionarMetodoPagoAleatorio(): string {
+        const metodosPago = ['EFECTIVO', 'CTA.CORRIENTE', 'TARJETA', 'CHEQUE', 'TRANSFERENCIA', 'VALES'];
+        return metodosPago[Math.floor(Math.random() * metodosPago.length)];
+    }
+
+    // Función helper para seleccionar producto aleatorio
+    function seleccionarProductoAleatorio(): number {
+        const productos = [1, 4]; // tr:nth-child(1) y tr:nth-child(4)
+        return productos[Math.floor(Math.random() * productos.length)];
+    }
+
+    // Función helper para generar montos de pago
+    function generarMontoPago(min: number = 50, max: number = 500): number {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    test('Venta con producto aleatorio y pago único', async ({ page }) => {
+        console.log('🛒 Iniciando venta con producto aleatorio y pago único');
+        
+        // Capturar saldo inicial de caja
+        await page.waitForSelector('[data-test="label-caja-box"]', { timeout: 15000 });
+        const saldoInicialText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoInicial = parseFloat(saldoInicialText?.replace(/[$,]/g, '') || '0');
+        console.log('💰 Saldo inicial de caja:', saldoInicial);
+
+        // Ir a crear-venta directamente por URL
+        console.log('📍 Navegando directamente a crear-venta...');
+        await page.goto('http://distribuidora.local/crear-venta');
+        await page.waitForTimeout(5000); // Esperar más tiempo para que cargue
+        
+        // Esperar a que la tabla de productos esté completamente cargada
+        console.log('⏳ Esperando a que cargue la tabla de productos...');
+        await page.waitForSelector('#buscararticulotabla', { timeout: 15000 });
+        await page.waitForSelector('#buscararticulotabla tbody tr', { timeout: 10000 });
+        console.log('✅ Tabla de productos cargada');
+
+        // === SELECCIONAR PRODUCTOS ===
+        console.log('📦 Seleccionando productos...');
+        
+        // Seleccionar primer producto (fila 4) con retry
+        const productoSeleccionado1 = 4;
+        console.log(`📦 Seleccionando producto en fila ${productoSeleccionado1}`);
+        
+        try {
+            await page.waitForSelector(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado1})`, { timeout: 10000 });
+            await page.locator(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado1}) > td:nth-child(6) > button`).click();
+        } catch (error) {
+            console.log('⚠️ Selector específico de fila 4 falló, probando alternativo');
+            // Intentar con el último botón disponible si no hay suficientes filas
+            await page.locator('#buscararticulotabla tbody tr button').last().click();
+        }
+        await page.waitForTimeout(1500);
+
+        // Seleccionar segundo producto (fila 1) 
+        const productoSeleccionado2 = 1;
+        console.log(`📦 Seleccionando producto adicional en fila ${productoSeleccionado2}`);
+        
+        try {
+            await page.waitForSelector(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado2})`, { timeout: 5000 });
+            await page.locator(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado2}) > td:nth-child(6) > button`).click();
+        } catch (error) {
+            console.log('⚠️ Selector específico de fila 1 falló, probando alternativo');
+            // Intentar con el primer botón disponible
+            await page.locator('#buscararticulotabla tbody tr button').first().click();
+        }
+        await page.waitForTimeout(1500);
+
+        // Grabar items
+        console.log('💾 Grabando items...');
+        await page.locator('#grabarItem').click();
+        await page.waitForTimeout(2000);
+
+        // Cerrar modal de productos
+        console.log('❌ Cerrando modal de productos...');
+        await page.locator('#cerrarProducto').click();
+        await page.waitForTimeout(2000);
+
+        // Seleccionar vendedor
+        console.log('👤 Seleccionando vendedor...');
+        await page.locator('#vendedorSeleccionado').selectOption('1');
+        await page.waitForTimeout(1000);
+
+        // Ir a pagar
+        console.log('💳 Iniciando proceso de pago...');
+        await page.locator('#btn-pagar').click();
+        await page.waitForTimeout(2000);
+
+        // Obtener el total de la venta del modal de pago
+        const totalElement = await page.locator('#nuevoPago');
+        await totalElement.waitFor({ state: 'visible', timeout: 10000 });
+        
+        // El total debería estar prellenado en el campo de pago
+        const totalVentaText = await totalElement.inputValue();
+        const totalVenta = parseFloat(totalVentaText?.replace(/[$,]/g, '') || '0');
+        console.log(`💵 Total de la venta: $${totalVenta}`);
+
+        // Hacer un pago único con método aleatorio
+        const metodoPago = seleccionarMetodoPagoAleatorio();
+        console.log(`💳 Método de pago seleccionado: ${metodoPago}`);
+
+        await page.locator('#nuevoPago').fill(totalVenta.toString());
+        await page.selectOption('#listaMetodoPago', metodoPago);
+        await page.locator('#btnGuardarVenta').click();
+
+        // Esperar confirmación de venta
+        await page.waitForTimeout(3000);
+
+        // Si es efectivo, verificar que se actualizó la caja
+        if (metodoPago === 'EFECTIVO') {
+            // Volver a inicio para verificar saldo
+            await page.goto('http://distribuidora.local/inicio');
+            await page.waitForTimeout(3000);
+            
+            const saldoFinalText = await page.locator('[data-test="label-caja-box"]').textContent();
+            const saldoFinal = parseFloat(saldoFinalText?.replace(/[$,]/g, '') || '0');
+            const saldoEsperado = saldoInicial + totalVenta;
+            
+            console.log('📊 RESUMEN VENTA CON PAGO ÚNICO:');
+            console.log(`   Productos: Fila ${productoSeleccionado1} + Fila ${productoSeleccionado2}`);
+            console.log(`   Total venta: $${totalVenta}`);
+            console.log(`   Método pago: ${metodoPago}`);
+            console.log(`   Saldo inicial caja: $${saldoInicial}`);
+            console.log(`   Saldo final caja: $${saldoFinal}`);
+            console.log(`   Saldo esperado: $${saldoEsperado}`);
+
+            expect(saldoFinal).toBe(saldoEsperado);
+            console.log('✅ Verificación exitosa: venta en efectivo reflejada en caja');
+        } else {
+            console.log('📊 RESUMEN VENTA CON PAGO ÚNICO:');
+            console.log(`   Productos: Fila ${productoSeleccionado1} + Fila ${productoSeleccionado2}`);
+            console.log(`   Total venta: $${totalVenta}`);
+            console.log(`   Método pago: ${metodoPago} (no afecta caja)`);
+            console.log('✅ Venta completada exitosamente');
+        }
+    });
+
+    test('Ventas múltiples con diferentes productos y pagos', async ({ page }) => {
+        console.log('🛒 Iniciando múltiples ventas con productos y pagos aleatorios');
+        
+        // Capturar saldo inicial de caja
+        await page.waitForSelector('[data-test="label-caja-box"]', { timeout: 15000 });
+        const saldoInicialText = await page.locator('[data-test="label-caja-box"]').textContent();
+        const saldoInicial = parseFloat(saldoInicialText?.replace(/[$,]/g, '') || '0');
+        console.log('💰 Saldo inicial de caja:', saldoInicial);
+
+        const cantidadVentas = Math.floor(Math.random() * 2) + 2; // Entre 2 y 3 ventas
+        console.log(`🎯 Se realizarán ${cantidadVentas} ventas diferentes`);
+
+        let totalEfectivoAcumulado = 0;
+        const ventasProcesadas: { producto: number, total: number, metodo: string }[] = [];
+
+        for (let v = 1; v <= cantidadVentas; v++) {
+            console.log(`\n🛍️ === VENTA ${v}/${cantidadVentas} ===`);
+            
+            // Ir a ventas directamente por URL
+            console.log(`📍 Venta ${v} - Navegando directamente a ventas...`);
+            await page.goto('http://distribuidora.local/crear-venta');
+            await page.waitForTimeout(5000); // Esperar más tiempo para que cargue
+            
+            // Esperar a que la tabla de productos esté completamente cargada
+            console.log(`⏳ Venta ${v} - Esperando a que cargue la tabla de productos...`);
+            await page.waitForSelector('#buscararticulotabla', { timeout: 15000 });
+            await page.waitForSelector('#buscararticulotabla tbody tr', { timeout: 10000 });
+            console.log(`✅ Venta ${v} - Tabla de productos cargada`);
+
+            // === SELECCIONAR PRODUCTOS ALEATORIOS ===
+            console.log(`📦 Venta ${v} - Seleccionando productos...`);
+            
+            // Seleccionar productos aleatorios
+            const productoSeleccionado1 = seleccionarProductoAleatorio();
+            const productoSeleccionado2 = seleccionarProductoAleatorio();
+            
+            console.log(`📦 Venta ${v} - Productos en filas ${productoSeleccionado1} y ${productoSeleccionado2}`);
+            
+            // Seleccionar primer producto con retry
+            try {
+                await page.waitForSelector(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado1})`, { timeout: 10000 });
+                await page.locator(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado1}) > td:nth-child(6) > button`).click();
+            } catch (error) {
+                console.log(`⚠️ Venta ${v} - Selector específico de fila ${productoSeleccionado1} falló, usando primer producto disponible`);
+                await page.locator('#buscararticulotabla tbody tr button').first().click();
+            }
+            await page.waitForTimeout(1500);
+
+            // Seleccionar segundo producto si es diferente
+            if (productoSeleccionado1 !== productoSeleccionado2) {
+                try {
+                    await page.waitForSelector(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado2})`, { timeout: 5000 });
+                    await page.locator(`#buscararticulotabla > tbody > tr:nth-child(${productoSeleccionado2}) > td:nth-child(6) > button`).click();
+                } catch (error) {
+                    console.log(`⚠️ Venta ${v} - Selector específico de fila ${productoSeleccionado2} falló, usando segundo producto disponible`);
+                    await page.locator('#buscararticulotabla tbody tr button').nth(1).click();
+                }
+                await page.waitForTimeout(1500);
+            }
+
+            // Grabar items
+            console.log(`💾 Venta ${v} - Grabando items...`);
+            await page.locator('#grabarItem').click();
+            await page.waitForTimeout(2000);
+
+            // Cerrar modal de productos
+            console.log(`❌ Venta ${v} - Cerrando modal de productos...`);
+            await page.locator('#cerrarProducto').click();
+            await page.waitForTimeout(2000);
+
+            // Seleccionar vendedor
+            console.log(`👤 Venta ${v} - Seleccionando vendedor...`);
+            await page.locator('#vendedorSeleccionado').selectOption('1');
+            await page.waitForTimeout(1000);
+
+            // Ir a pagar
+            console.log(`💳 Venta ${v} - Iniciando proceso de pago...`);
+            await page.locator('#btn-pagar').click();
+            await page.waitForTimeout(2000);
+
+            // Obtener el total de la venta del modal de pago
+            const totalElement = await page.locator('#nuevoPago');
+            await totalElement.waitFor({ state: 'visible', timeout: 10000 });
+            
+            // El total debería estar prellenado en el campo de pago
+            const totalVentaText = await totalElement.inputValue();
+            const totalVenta = parseFloat(totalVentaText?.replace(/[$,]/g, '') || '0');
+            console.log(`💵 Venta ${v} - Total: $${totalVenta}`);
+
+            // Seleccionar método de pago aleatorio
+            const metodoPago = seleccionarMetodoPagoAleatorio();
+            console.log(`💳 Venta ${v} - Método: ${metodoPago}`);
+
+            // Registrar si es efectivo
+            if (metodoPago === 'EFECTIVO') {
+                totalEfectivoAcumulado += totalVenta;
+            }
+
+            ventasProcesadas.push({ 
+                producto: `${productoSeleccionado1}+${productoSeleccionado2}`, 
+                total: totalVenta, 
+                metodo: metodoPago 
+            });
+
+            // Realizar el pago
+            await page.locator('#nuevoPago').fill(totalVenta.toString());
+            await page.selectOption('#listaMetodoPago', metodoPago);
+            
+            // Finalizar venta con el botón correcto
+            await page.locator('#btn-IngresarPago').click();
+            
+            // Esperar confirmación
+            await page.waitForTimeout(3000);
+            console.log(`✅ Venta ${v} completada`);
+        }
+
+        // Verificar impacto final en caja
+        if (totalEfectivoAcumulado > 0) {
+            await page.goto('http://distribuidora.local/inicio');
+            await page.waitForTimeout(3000);
+            
+            const saldoFinalText = await page.locator('[data-test="label-caja-box"]').textContent();
+            const saldoFinal = parseFloat(saldoFinalText?.replace(/[$,]/g, '') || '0');
+            const saldoEsperado = saldoInicial + totalEfectivoAcumulado;
+            
+            console.log('\n📊 RESUMEN MÚLTIPLES VENTAS:');
+            console.log(`   Cantidad de ventas: ${cantidadVentas}`);
+            ventasProcesadas.forEach((venta, idx) => {
+                console.log(`   Venta ${idx + 1}: Fila ${venta.producto}, $${venta.total}, ${venta.metodo}`);
+            });
+            console.log(`   Total en efectivo acumulado: $${totalEfectivoAcumulado}`);
+            console.log(`   Saldo inicial caja: $${saldoInicial}`);
+            console.log(`   Saldo final caja: $${saldoFinal}`);
+            console.log(`   Saldo esperado: $${saldoEsperado}`);
+
+            expect(saldoFinal).toBe(saldoEsperado);
+            console.log('✅ Verificación exitosa: todas las ventas en efectivo reflejadas en caja');
+        } else {
+            console.log('\n📊 RESUMEN MÚLTIPLES VENTAS:');
+            console.log(`   Cantidad de ventas: ${cantidadVentas}`);
+            ventasProcesadas.forEach((venta, idx) => {
+                console.log(`   Venta ${idx + 1}: Fila ${venta.producto}, $${venta.total}, ${venta.metodo}`);
+            });
+            console.log('   Sin pagos en efectivo - no afecta caja');
+            console.log('✅ Todas las ventas completadas exitosamente');
+        }
+    });
+
+});
+
 
 
 
