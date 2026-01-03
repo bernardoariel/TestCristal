@@ -15,5 +15,9 @@ export const users: Record<string, User> = {
     vendedor: {
         name: "vendedor",
         pass: "123456"
+    },
+    cristal:{
+        name: "cristal",
+        pass: "123456"
     }
 };

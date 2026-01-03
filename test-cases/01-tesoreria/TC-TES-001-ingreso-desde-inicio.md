@@ -26,7 +26,6 @@ Verificar que un usuario pueda transferir dinero desde caja efectivo hacia tesor
 4. Ingresar a tesoreria: 72.000.000,00
 3. Saldo en caja: $100.000,00
 4. Saldo en tesorería: $72.000.000,00
-5. Base de datos en estado conocido
 
 
 ## Datos de Prueba
